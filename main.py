@@ -1,13 +1,16 @@
 import datetime
 import random
+import os
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from dotenv import load_dotenv
 
-# Configuration
-API_KEY = input("Veuillez entrer votre clé API YouTube : ")
-PREFIX = input("Veuillez entrer le préfixe à ajouter aux titres des vidéos : ")
-SUFFIX = input("Veuillez entrer le suffixe à ajouter aux titres des vidéos : ")
-DESCRIPTION = input("Veuillez entrer la description commune à ajouter aux vidéos : ")
+# Charger les variables du fichier .env
+load_dotenv()
+API_KEY = os.getenv('API_KEY')
+PREFIX = os.getenv('PREFIX')
+SUFFIX = os.getenv('SUFFIX')
+DESCRIPTION = os.getenv('DESCRIPTION').replace('\\n', '\n')
 
 youtube = build('youtube', 'v3', developerKey=API_KEY)
 
