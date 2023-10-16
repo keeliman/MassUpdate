@@ -17,6 +17,7 @@ def load_configurations():
         "API_KEY": os.getenv('API_KEY'),
         "PREFIX": os.getenv('PREFIX'),
         "SUFFIX": os.getenv('SUFFIX'),
+        "PLAYLIST_ID": os.getenv('PLAYLIST_ID'),
         "DESCRIPTION": os.getenv('DESCRIPTION').replace('\\n', '\n'),
         "FIRST_INTERVAL": (int(os.getenv('FIRST_INTERVAL_START')), int(os.getenv('FIRST_INTERVAL_END'))),
         "SECOND_INTERVAL": (int(os.getenv('SECOND_INTERVAL_START')), int(os.getenv('SECOND_INTERVAL_END'))),
@@ -48,11 +49,46 @@ def authenticate_with_oauth():
 # ---------------- YouTube API Interactions ----------------
 
 def get_draft_videos(youtube):
-    request = youtube.videos().list(part="snippet,status", mine=True, maxResults=50)
-    response = request.execute()
-    return [item for item in response['items'] if item['status']['privacyStatus'] == 'private']
 
-def update_video(youtube, video, title, description, publish_time):
+    # Récupération des vidéos associées à l'utilisateur authentifié
+    search_response = youtube.search().list(part="snippet", type="video", forMine=True, maxResults=50).execute()
+    
+    video_ids = [item['id']['videoId'] for item in search_response.get('items', [])]
+    
+    if not video_ids:
+        return []
+
+    # Récupération des détails des vidéos pour vérifier le statut de confidentialité
+    videos_response = youtube.videos().list(part="snippet,status", id=",".join(video_ids), order="title").execute()
+    
+    # Filtrage des vidéos avec le statut de confidentialité 'private'
+    draft_videos = [video for video in videos_response.get('items', []) if video['status']['privacyStatus'] == 'private']
+    
+    return draft_videos
+
+def get_video_categories(youtube, region_code="US"):
+    categories_response = youtube.videoCategories().list(part="snippet", regionCode=region_code).execute()
+    return {category["snippet"]["title"]: category["id"] for category in categories_response.get("items", [])}
+
+# add to playlist 
+def add_to_playlist(youtube, playlist_id, video_id):
+    request = youtube.playlistItems().insert(
+        part="snippet",
+        body={
+            "snippet": {
+                "playlistId": playlist_id,
+                "position": 0,
+                "resourceId": {
+                    "kind": "youtube#video",
+                    "videoId": video_id
+                }
+            }
+        }
+    )
+    response = request.execute()
+    return response
+
+def update_video(youtube, video, title, description, publish_time, category_id):
     video_id = video['id']
     request = youtube.videos().update(
         part="snippet,status",
@@ -60,7 +96,8 @@ def update_video(youtube, video, title, description, publish_time):
             "id": video_id,
             "snippet": {
                 "title": title,
-                "description": description
+                "description": description,
+                "categoryId": category_id  
             },
             "status": {
                 "publishAt": publish_time.isoformat(),
@@ -84,12 +121,19 @@ def calculate_publish_time(start_date, index, first_interval, second_interval):
         hour = random.randint(second_interval[0], second_interval[1])
     return start_date + datetime.timedelta(days=index//2, hours=hour)
 
-# ---------------- Main Execution ----------------
+# ---------------- Scenarios  ----------------
 
-def main():
+def scenario_1 () :
     youtube = authenticate_with_oauth()
     config = load_configurations()
-    
+
+    # Récupérer les catégories de vidéos
+    video_categories = get_video_categories(youtube)
+
+    # Utilisez une catégorie par défaut, par exemple "Entertainment". Vous pouvez la changer selon vos besoins.
+    default_category_id = video_categories.get("Entertainment", None)
+
+    # strategy to retrieve videos 
     draft_videos = get_draft_videos(youtube)[:config["MAX_VIDEOS"]]  # Limit the number of videos
     start_date = config["START_DATE"]
     
@@ -97,10 +141,15 @@ def main():
         title = process_video_title(video, config["PREFIX"], config["SUFFIX"])
         publish_time = calculate_publish_time(start_date, i, config["FIRST_INTERVAL"], config["SECOND_INTERVAL"])
         try:
-            update_video(youtube, video, title, config["DESCRIPTION"], publish_time)
+            update_video(youtube, video, title, config["DESCRIPTION"], publish_time, default_category_id)
+            add_to_playlist(youtube, config["PLAYLIST_ID"], video['id'])
             print(f"Updated video {video['snippet']['title']} for publishing at {publish_time}")
         except HttpError as e:
             print(f"An error occurred while updating video {video['snippet']['title']}: {e}")
+
+# ---------------- Main Execution ----------------
+def main():
+    scenario_1 ()
 
 if __name__ == "__main__":
     main()
