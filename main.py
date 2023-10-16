@@ -64,7 +64,8 @@ def update_video(youtube, video, title, description, publish_time):
             },
             "status": {
                 "publishAt": publish_time.isoformat(),
-                "privacyStatus": "private"
+                "privacyStatus": "private",
+                "madeForKids": False  # Set to False to indicate "No, it's not made for kids"
             }
         }
     )
