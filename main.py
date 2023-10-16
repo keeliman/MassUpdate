@@ -5,7 +5,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from dotenv import load_dotenv
 
-# Charger les variables du fichier .env
+# Load variables from .env file
 load_dotenv()
 API_KEY = os.getenv('API_KEY')
 PREFIX = os.getenv('PREFIX')
