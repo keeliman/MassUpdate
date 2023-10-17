@@ -129,7 +129,7 @@ def get_scheduled_videos_on_date(youtube, target_date, max_results=400, regex_pa
 
             # Check if the video is private and scheduled for the target date
             if video['status']['privacyStatus'] == 'private' and video['status'].get('publishAt', '').startswith(target_date):
-                log(f"Video Title: {video['snippet']['title']}, Scheduled Date: {video['status']['publishAt']}")
+                logging.debug(f"Video Title: {video['snippet']['title']}, Scheduled Date: {video['status']['publishAt']}")
                 scheduled_videos.append((number, video))
 
         # Check if there are more results to fetch
