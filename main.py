@@ -206,24 +206,15 @@ def calculate_publish_time(start_date, index, first_interval, second_interval):
 
 # ---------------- Scenarios ----------------
 
-def scenario_1():
-    youtube = authenticate_with_oauth()
-    config = load_configurations()
-
-    # Retrieve video categories
+def update_videos(youtube, config, draft_videos):
     video_categories = get_video_categories(youtube)
-
-    # Use a default category, e.g., "Entertainment". You can change it as needed.
     default_category_id = video_categories.get("Entertainment", None)
-
-    # Strategy to retrieve videos
-    maxResults = config["REQ_MAX_RESULT"]
-    draft_videos = get_all_draft_videos(youtube, maxResults)[:config["MAX_VIDEOS"]]
     start_date = config["START_DATE"]
-    
+
     for i, video in enumerate(draft_videos):
         title = process_video_title(video, config["PREFIX"], config["SUFFIX"])
         publish_time = calculate_publish_time(start_date, i, config["FIRST_INTERVAL"], config["SECOND_INTERVAL"])
+
         try:
             update_video(youtube, video, title, config["DESCRIPTION"], publish_time, default_category_id)
             add_to_playlist(youtube, config["PLAYLIST_ID"], video['id'])
@@ -231,35 +222,29 @@ def scenario_1():
         except HttpError as e:
             logging.debug(f"An error occurred while updating video {video['snippet']['title']}: {e}")
 
+
+def scenario_1():
+    youtube = authenticate_with_oauth()
+    config = load_configurations()
+    max_results = config["REQ_MAX_RESULT"]
+    draft_videos = get_all_draft_videos(youtube, max_results)[:config["MAX_VIDEOS"]]
+
+    update_videos(youtube, config, draft_videos)
+
+
 def scenario_2():
     youtube = authenticate_with_oauth()
     config = load_configurations()
+    temp_date = config['TEMP_DATE']
 
-    tempDate = config['TEMP_DATE']
-    if not is_valid_date_format(tempDate):
+    if not is_valid_date_format(temp_date):
         logging.error("Error: TEMP_DATE is not in the 'YYYY-MM-DD' format. Please correct the format in .env.")
         exit(1)
 
-    # Retrieve video categories
-    video_categories = get_scheduled_videos_on_date(youtube,tempDate)
+    max_results = config["REQ_MAX_RESULT"]
+    draft_videos = get_all_draft_videos(youtube, config['START_VIDEO_NUMBER'], config['END_VIDEO_NUMBER'], max_results)[:config["MAX_VIDEOS"]]
 
-    # Use a default category, e.g., "Entertainment". You can change it as needed.
-    default_category_id = video_categories.get("Entertainment", None)
-
-    # Strategy to retrieve videos
-    maxResults = config["REQ_MAX_RESULT"]
-    draft_videos = get_all_draft_videos(youtube, config['START_VIDEO_NUMBER'], config['END_VIDEO_NUMBER'], maxResults)[:config["MAX_VIDEOS"]]  # Limit the number of videos
-    start_date = config["START_DATE"]
-    
-    for i, video in enumerate(draft_videos):
-        title = process_video_title(video, config["PREFIX"], config["SUFFIX"])
-        publish_time = calculate_publish_time(start_date, i, config["FIRST_INTERVAL"], config["SECOND_INTERVAL"])
-        try:
-            update_video(youtube, video, title, config["DESCRIPTION"], publish_time, default_category_id)
-            add_to_playlist(youtube, config["PLAYLIST_ID"], video['id'])
-            logging.info(f"Updated video {video['snippet']['title']} for publishing at {publish_time}")
-        except HttpError as e:
-            logging.error(f"An error occurred while updating video {video['snippet']['title']}: {e}")
+    update_videos(youtube, config, draft_videos)
 
 
 # ---------------- Main Execution ----------------
