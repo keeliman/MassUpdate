@@ -150,8 +150,12 @@ def is_valid_date_format(date_str):
     return bool(re.match(r'^\d{4}-\d{2}-\d{2}$', date_str))
 
 def get_video_categories(youtube, region_code="US"):
-    categories_response = youtube.videoCategories().list(part="snippet", regionCode=region_code).execute()
-    return {category["snippet"]["title"]: category["id"] for category in categories_response.get("items", [])}
+    try:
+        categories_response = youtube.videoCategories().list(part="snippet", regionCode=region_code).execute()
+        return {category["snippet"]["title"]: category["id"] for category in categories_response.get("items", [])}
+    except HttpError as e:
+        logging.error(f"Error fetching video categories: {e}")
+        return {}
 
 # Add to playlist
 def add_to_playlist(youtube, playlist_id, video_id):
@@ -209,6 +213,7 @@ def calculate_publish_time(start_date, index, first_interval, second_interval):
 def update_videos(youtube, videos, config):
     quota_counter = 0
     MAX_QUOTA = 10000  # Daily quota limit
+    start_date = config["START_DATE"]
 
     video_categories = get_video_categories(youtube)
     quota_counter += 1  # Assume 1 unit for fetching categories
@@ -216,9 +221,9 @@ def update_videos(youtube, videos, config):
     videos_to_update = []  # List to store videos that need updating
 
     # First, gather all videos that need updating
-    for video in videos:
+    for i, video in enumerate(videos):
         title = process_video_title(video, config["PREFIX"], config["SUFFIX"])
-        publish_time = calculate_publish_time(...)
+        publish_time = calculate_publish_time(start_date, i, config["FIRST_INTERVAL"], config["SECOND_INTERVAL"])
         videos_to_update.append((video, title, publish_time))
 
     # Update videos while keeping track of the quota
@@ -246,9 +251,7 @@ def scenario_1():
     config = load_configurations()
     max_results = config["REQ_MAX_RESULT"]
     draft_videos = get_all_draft_videos(youtube, config['START_VIDEO_NUMBER'], config['END_VIDEO_NUMBER'], max_results)[:config["MAX_VIDEOS"]]
-
-    update_videos(youtube, config, draft_videos)
-
+    update_videos(youtube, draft_videos, config)  
 
 def scenario_2():
     youtube = authenticate_with_oauth()
@@ -261,8 +264,8 @@ def scenario_2():
 
     max_results = config["REQ_MAX_RESULT"]
     draft_videos = get_scheduled_videos_on_date(youtube, temp_date, max_results)[:config["MAX_VIDEOS"]]
+    update_videos(youtube, draft_videos, config)  
 
-    update_videos(youtube, config, draft_videos)
 
 
 # ---------------- Main Execution ----------------
@@ -277,7 +280,7 @@ def main(scenario_name):
     }
 
     if scenario_name in scenarios:
-        scenarios[scenario_name](youtube, config)
+        scenarios[scenario_name]()
     else:
         logging.error(f"Scenario '{scenario_name}' not found.")
 
