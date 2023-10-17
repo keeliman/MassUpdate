@@ -23,9 +23,12 @@ def load_configurations():
         "DESCRIPTION": os.getenv('DESCRIPTION').replace('\\n', '\n'),
         "FIRST_INTERVAL": (int(os.getenv('FIRST_INTERVAL_START')), int(os.getenv('FIRST_INTERVAL_END'))),
         "SECOND_INTERVAL": (int(os.getenv('SECOND_INTERVAL_START')), int(os.getenv('SECOND_INTERVAL_END'))),
-        "MAX_VIDEOS": int(os.getenv('MAX_VIDEOS', 50)),  # Default to 50 if not set
-        "REQ_MAX_RESULT": int(os.getenv('REQ_MAX_RESULT', 50)),  # Default to 50 if not set
-        "START_DATE": datetime.datetime.strptime(os.getenv('START_DATE', datetime.datetime.now().strftime('%Y-%m-%d')), '%Y-%m-%d')
+        "TEMP_DATE": os.getenv('TEMP_DATE'),
+        "MAX_VIDEOS": int(os.getenv('MAX_VIDEOS', 50)),  # Par défaut à 50 si non défini
+        "REQ_MAX_RESULT": int(os.getenv('REQ_MAX_RESULT', 50)),  # Par défaut à 50 si non défini
+        "START_DATE": datetime.datetime.strptime(os.getenv('START_DATE', datetime.datetime.now().strftime('%Y-%m-%d')), '%Y-%m-%d'),
+        "START_VIDEO_NUMBER": int(os.getenv('START_VIDEO_NUMBER', 130)),  # Par défaut à 130 si non défini
+        "END_VIDEO_NUMBER": int(os.getenv('END_VIDEO_NUMBER', 200))  # Par défaut à 200 si non défini
     }
 
 # ---------------- OAuth Authentication ----------------
@@ -49,19 +52,22 @@ def authenticate_with_oauth():
 
 # ---------------- YouTube API Interactions ----------------
 
-def get_all_draft_videos(youtube, max_results=400, regex_pattern=r'^\d+$'):
+def get_all_draft_videos(youtube, start_video_number=1, end_video_number=300, max_results=400, regex_pattern=r'^\d+$'):
     draft_videos = []
     next_page_token = None
 
     while True:
-        # Perform the request for the current page
-        search_response = youtube.search().list(
-            part="snippet",
-            type="video",
-            forMine=True,
-            maxResults=max_results,
-            pageToken=next_page_token
-        ).execute()
+        try:
+            search_response = youtube.search().list(
+                part="snippet",
+                type="video",
+                forMine=True,
+                maxResults=max_results,
+                pageToken=next_page_token
+            ).execute()
+        except HttpError as e:
+            print(f"Error fetching videos: {e}")
+            break
 
         video_items = search_response.get('items', [])
 
@@ -71,24 +77,62 @@ def get_all_draft_videos(youtube, max_results=400, regex_pattern=r'^\d+$'):
             number = None
             if match:
                 number = int(match.group())
+                if start_video_number <= number < end_video_number:
+                    if 'status' not in video:
+                        draft_videos.append(video)
 
-            # Check if 'status' is not present in the response (the video is in unscheduled draft)
-            if 'status' not in video and number is not None:
-                log(f"Video Title: {video['snippet']['title']}, Number: {number}")
-                draft_videos.append((number, video))
-
-        # Check if there are more results to fetch
         next_page_token = search_response.get('nextPageToken')
         if not next_page_token:
             break
 
     # Sort videos based on numbers extracted from the title
-    draft_videos.sort(key=lambda x: x[0])
-
-    # Retrieve videos without the number, if needed
-    draft_videos = [video for _, video in draft_videos]
+    draft_videos.sort(key=lambda x: int(re.search(regex_pattern, x['snippet']['title']).group()))
 
     return draft_videos
+
+
+def get_all_draft_videos(youtube, start_video_number=1, end_video_number=300, max_results=400, regex_pattern=r'^\d+$'):
+    draft_videos = []
+    next_page_token = None
+
+    while True:
+        try:
+            search_response = youtube.search().list(
+                part="snippet",
+                type="video",
+                forMine=True,
+                maxResults=max_results,
+                pageToken=next_page_token
+            ).execute()
+        except HttpError as e:
+            print(f"Error fetching videos: {e}")
+            break
+
+        video_items = search_response.get('items', [])
+
+        for video in video_items:
+            title = video['snippet']['title']
+            match = re.search(regex_pattern, title)
+            number = None
+            if match:
+                number = int(match.group())
+                if start_video_number <= number < end_video_number:
+                    if 'status' not in video:
+                        draft_videos.append(video)
+
+        next_page_token = search_response.get('nextPageToken')
+        if not next_page_token:
+            break
+
+    # Sort videos based on numbers extracted from the title
+    draft_videos.sort(key=lambda x: int(re.search(regex_pattern, x['snippet']['title']).group()))
+
+    return draft_videos
+
+
+def is_valid_date_format(date_str):
+    """Check if the date is in the 'YYYY-MM-DD' format.""""
+    return bool(re.match(r'^\d{4}-\d{2}-\d{2}$', date_str))
 
 def get_video_categories(youtube, region_code="US"):
     categories_response = youtube.videoCategories().list(part="snippet", regionCode=region_code).execute()
@@ -160,6 +204,36 @@ def scenario_1():
     # Strategy to retrieve videos
     maxResults = config["REQ_MAX_RESULT"]
     draft_videos = get_all_draft_videos(youtube, maxResults)[:config["MAX_VIDEOS"]]
+    start_date = config["START_DATE"]
+    
+    for i, video in enumerate(draft_videos):
+        title = process_video_title(video, config["PREFIX"], config["SUFFIX"])
+        publish_time = calculate_publish_time(start_date, i, config["FIRST_INTERVAL"], config["SECOND_INTERVAL"])
+        try:
+            update_video(youtube, video, title, config["DESCRIPTION"], publish_time, default_category_id)
+            add_to_playlist(youtube, config["PLAYLIST_ID"], video['id'])
+            log(f"Updated video {video['snippet']['title']} for publishing at {publish_time}")
+        except HttpError as e:
+            log(f"An error occurred while updating video {video['snippet']['title']}: {e}")
+
+def scenario_2():
+    youtube = authenticate_with_oauth()
+    config = load_configurations()
+
+    tempDate = config['TEMP_DATE']
+    if not is_valid_date_format(tempDate):
+        print("Error: TEMP_DATE is not in the 'YYYY-MM-DD' format. Please correct the format in .env.")
+        exit(1)
+
+    # Retrieve video categories
+    video_categories = get_scheduled_videos_on_date(youtube,tempDate)
+
+    # Use a default category, e.g., "Entertainment". You can change it as needed.
+    default_category_id = video_categories.get("Entertainment", None)
+
+    # Strategy to retrieve videos
+    maxResults = config["REQ_MAX_RESULT"]
+    draft_videos = get_all_draft_videos(youtube, config['START_VIDEO_NUMBER'], config['END_VIDEO_NUMBER'], maxResults)[:config["MAX_VIDEOS"]]  # Limit the number of videos
     start_date = config["START_DATE"]
     
     for i, video in enumerate(draft_videos):
