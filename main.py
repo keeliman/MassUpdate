@@ -8,6 +8,12 @@ from googleapiclient.errors import HttpError
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from dotenv import load_dotenv
+import logging
+
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+ONLY_NUMBERS_REGEX = r'^\d+$'
+CONTAINS_NUMBERS_REGEX = r'\d+'
 
 DEBUG_MODE = True  # Set this to False for INFO mode
 
@@ -52,7 +58,8 @@ def authenticate_with_oauth():
 
 # ---------------- YouTube API Interactions ----------------
 
-def get_all_draft_videos(youtube, start_video_number=1, end_video_number=300, max_results=400, regex_pattern=r'^\d+$'):
+
+def get_all_draft_videos(youtube, start_video_number=1, end_video_number=300, max_results=400, regex_pattern=CONTAINS_NUMBERS_REGEX):
     draft_videos = []
     next_page_token = None
 
@@ -66,7 +73,7 @@ def get_all_draft_videos(youtube, start_video_number=1, end_video_number=300, ma
                 pageToken=next_page_token
             ).execute()
         except HttpError as e:
-            print(f"Error fetching videos: {e}")
+            logging.error(f"Error fetching videos: {e}")
             break
 
         video_items = search_response.get('items', [])
@@ -80,6 +87,7 @@ def get_all_draft_videos(youtube, start_video_number=1, end_video_number=300, ma
                 if start_video_number <= number < end_video_number:
                     if 'status' not in video:
                         draft_videos.append(video)
+                        logging.debug(f"Adding video: {title}, Number: {number}")
 
         next_page_token = search_response.get('nextPageToken')
         if not next_page_token:
@@ -90,48 +98,55 @@ def get_all_draft_videos(youtube, start_video_number=1, end_video_number=300, ma
 
     return draft_videos
 
-
-def get_all_draft_videos(youtube, start_video_number=1, end_video_number=300, max_results=400, regex_pattern=r'^\d+$'):
-    draft_videos = []
+def get_scheduled_videos_on_date(youtube, target_date, max_results=400, regex_pattern=r'^\d+$'):
+    scheduled_videos = []
     next_page_token = None
 
     while True:
-        try:
-            search_response = youtube.search().list(
-                part="snippet",
-                type="video",
-                forMine=True,
-                maxResults=max_results,
-                pageToken=next_page_token
-            ).execute()
-        except HttpError as e:
-            print(f"Error fetching videos: {e}")
-            break
+        # Perform the request for the current page
+        search_response = youtube.search().list(
+            part="snippet",
+            type="video",
+            forMine=True,
+            maxResults=max_results,
+            pageToken=next_page_token
+        ).execute()
 
-        video_items = search_response.get('items', [])
+        video_ids = [item['id']['videoId'] for item in search_response.get('items', [])]
+        
+        # Fetch video details using video IDs
+        videos_response = youtube.videos().list(
+            part="snippet,status",
+            id=",".join(video_ids)
+        ).execute()
 
-        for video in video_items:
+        for video in videos_response.get('items', []):
             title = video['snippet']['title']
             match = re.search(regex_pattern, title)
             number = None
             if match:
                 number = int(match.group())
-                if start_video_number <= number < end_video_number:
-                    if 'status' not in video:
-                        draft_videos.append(video)
 
+            # Check if the video is private and scheduled for the target date
+            if video['status']['privacyStatus'] == 'private' and video['status'].get('publishAt', '').startswith(target_date):
+                log(f"Video Title: {video['snippet']['title']}, Scheduled Date: {video['status']['publishAt']}")
+                scheduled_videos.append((number, video))
+
+        # Check if there are more results to fetch
         next_page_token = search_response.get('nextPageToken')
         if not next_page_token:
             break
 
     # Sort videos based on numbers extracted from the title
-    draft_videos.sort(key=lambda x: int(re.search(regex_pattern, x['snippet']['title']).group()))
+    scheduled_videos.sort(key=lambda x: x[0])
 
-    return draft_videos
+    # Retrieve videos without the number, if needed
+    scheduled_videos = [video for _, video in scheduled_videos]
 
+    return scheduled_videos
 
 def is_valid_date_format(date_str):
-    """Check if the date is in the 'YYYY-MM-DD' format.""""
+    """Check if the date is in the 'YYYY-MM-DD' format."""
     return bool(re.match(r'^\d{4}-\d{2}-\d{2}$', date_str))
 
 def get_video_categories(youtube, region_code="US"):
@@ -212,9 +227,9 @@ def scenario_1():
         try:
             update_video(youtube, video, title, config["DESCRIPTION"], publish_time, default_category_id)
             add_to_playlist(youtube, config["PLAYLIST_ID"], video['id'])
-            log(f"Updated video {video['snippet']['title']} for publishing at {publish_time}")
+            logging.debug(f"Updated video {video['snippet']['title']} for publishing at {publish_time}")
         except HttpError as e:
-            log(f"An error occurred while updating video {video['snippet']['title']}: {e}")
+            logging.debug(f"An error occurred while updating video {video['snippet']['title']}: {e}")
 
 def scenario_2():
     youtube = authenticate_with_oauth()
@@ -222,7 +237,7 @@ def scenario_2():
 
     tempDate = config['TEMP_DATE']
     if not is_valid_date_format(tempDate):
-        print("Error: TEMP_DATE is not in the 'YYYY-MM-DD' format. Please correct the format in .env.")
+        logging.error("Error: TEMP_DATE is not in the 'YYYY-MM-DD' format. Please correct the format in .env.")
         exit(1)
 
     # Retrieve video categories
@@ -242,17 +257,10 @@ def scenario_2():
         try:
             update_video(youtube, video, title, config["DESCRIPTION"], publish_time, default_category_id)
             add_to_playlist(youtube, config["PLAYLIST_ID"], video['id'])
-            log(f"Updated video {video['snippet']['title']} for publishing at {publish_time}")
+            logging.info(f"Updated video {video['snippet']['title']} for publishing at {publish_time}")
         except HttpError as e:
-            log(f"An error occurred while updating video {video['snippet']['title']}: {e}")
+            logging.error(f"An error occurred while updating video {video['snippet']['title']}: {e}")
 
-# ---------------- Logging ----------------
-
-def log(message):
-    if DEBUG_MODE:
-        print(f"[DEBUG] {message}")
-    else:
-        print(f"[INFO] {message}")
 
 # ---------------- Main Execution ----------------
 
