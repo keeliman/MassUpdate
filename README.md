@@ -31,7 +31,9 @@ This script allows users to automate the process of updating YouTube video detai
 - Fill in the required details in the .env file.
 
 ## Usage
-- Run the script: python main.py
+- Run the script:
+  ```bash
+  python main.py
 - If running for the first time, it will open a browser window for OAuth2 authentication. Log in with the Google account associated with the YouTube channel and grant the necessary permissions.
 - The script will then retrieve all draft videos, update their details, and schedule them for publishing.
 
