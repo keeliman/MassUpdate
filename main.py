@@ -206,21 +206,39 @@ def calculate_publish_time(start_date, index, first_interval, second_interval):
 
 # ---------------- Scenarios ----------------
 
-def update_videos(youtube, config, draft_videos):
-    video_categories = get_video_categories(youtube)
-    default_category_id = video_categories.get("Entertainment", None)
-    start_date = config["START_DATE"]
+def update_videos(youtube, videos, config):
+    quota_counter = 0
+    MAX_QUOTA = 10000  # Daily quota limit
 
-    for i, video in enumerate(draft_videos):
+    video_categories = get_video_categories(youtube)
+    quota_counter += 1  # Assume 1 unit for fetching categories
+
+    videos_to_update = []  # List to store videos that need updating
+
+    # First, gather all videos that need updating
+    for video in videos:
         title = process_video_title(video, config["PREFIX"], config["SUFFIX"])
-        publish_time = calculate_publish_time(start_date, i, config["FIRST_INTERVAL"], config["SECOND_INTERVAL"])
+        publish_time = calculate_publish_time(...)
+        videos_to_update.append((video, title, publish_time))
+
+    # Update videos while keeping track of the quota
+    for video, title, publish_time in videos_to_update:
+        if quota_counter + 1650 > MAX_QUOTA:  # Check if the upcoming operations will exceed the quota
+            logging.warning("Approaching quota limit. Pausing updates.")
+            break
 
         try:
-            update_video(youtube, video, title, config["DESCRIPTION"], publish_time, default_category_id)
+            update_video(youtube, video, title, config["DESCRIPTION"], publish_time, video_categories["Entertainment"])
+            quota_counter += 1600  # 1600 units for video update
+
             add_to_playlist(youtube, config["PLAYLIST_ID"], video['id'])
-            logging.debug(f"Updated video {video['snippet']['title']} for publishing at {publish_time}")
+            quota_counter += 50  # 50 units for adding to playlist
+
         except HttpError as e:
-            logging.debug(f"An error occurred while updating video {video['snippet']['title']}: {e}")
+            logging.error(f"Error updating video {video['snippet']['title']}: {e}")
+
+        logging.info(f"Quota used so far: {quota_counter}")
+
 
 
 def scenario_1():
@@ -249,8 +267,20 @@ def scenario_2():
 
 # ---------------- Main Execution ----------------
 
-def main():
-    scenario_1()
+def main(scenario_name):
+    youtube = authenticate_with_oauth()
+    config = load_configurations()
+
+    scenarios = {
+        "scenario_1": scenario_1,
+        "scenario_2": scenario_2
+    }
+
+    if scenario_name in scenarios:
+        scenarios[scenario_name](youtube, config)
+    else:
+        logging.error(f"Scenario '{scenario_name}' not found.")
 
 if __name__ == "__main__":
-    main()
+    # Here, you can specify which scenario to run
+    main("scenario_1")
