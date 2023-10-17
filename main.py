@@ -98,7 +98,7 @@ def get_all_draft_videos(youtube, start_video_number=1, end_video_number=300, ma
 
     return draft_videos
 
-def get_scheduled_videos_on_date(youtube, target_date, max_results=400, regex_pattern=r'^\d+$'):
+def get_scheduled_videos_on_date(youtube, target_date, max_results=400, regex_pattern=ONLY_NUMBERS_REGEX):
     scheduled_videos = []
     next_page_token = None
 
@@ -227,7 +227,7 @@ def scenario_1():
     youtube = authenticate_with_oauth()
     config = load_configurations()
     max_results = config["REQ_MAX_RESULT"]
-    draft_videos = get_all_draft_videos(youtube, max_results)[:config["MAX_VIDEOS"]]
+    draft_videos = get_all_draft_videos(youtube, config['START_VIDEO_NUMBER'], config['END_VIDEO_NUMBER'], max_results)[:config["MAX_VIDEOS"]]
 
     update_videos(youtube, config, draft_videos)
 
@@ -242,7 +242,7 @@ def scenario_2():
         exit(1)
 
     max_results = config["REQ_MAX_RESULT"]
-    draft_videos = get_all_draft_videos(youtube, config['START_VIDEO_NUMBER'], config['END_VIDEO_NUMBER'], max_results)[:config["MAX_VIDEOS"]]
+    draft_videos = get_scheduled_videos_on_date(youtube, temp_date, max_results)[:config["MAX_VIDEOS"]]
 
     update_videos(youtube, config, draft_videos)
 
