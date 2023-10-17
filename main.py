@@ -1,4 +1,5 @@
 import os
+import re  
 import pickle
 import datetime
 import random
@@ -22,6 +23,7 @@ def load_configurations():
         "FIRST_INTERVAL": (int(os.getenv('FIRST_INTERVAL_START')), int(os.getenv('FIRST_INTERVAL_END'))),
         "SECOND_INTERVAL": (int(os.getenv('SECOND_INTERVAL_START')), int(os.getenv('SECOND_INTERVAL_END'))),
         "MAX_VIDEOS": int(os.getenv('MAX_VIDEOS', 50)),  # Default to 50 if not set
+        "REQ_MAX_RESULT": int(os.getenv('REQ_MAX_RESULT', 50)),  # Default to 50 if not set
         "START_DATE": datetime.datetime.strptime(os.getenv('START_DATE', datetime.datetime.now().strftime('%Y-%m-%d')), '%Y-%m-%d')
     }
 
@@ -48,22 +50,48 @@ def authenticate_with_oauth():
 
 # ---------------- YouTube API Interactions ----------------
 
-def get_draft_videos(youtube):
+def get_all_draft_videos(youtube, max_results=400,regex_pattern = r'^\d+$'):
+    draft_videos = []
+    next_page_token = None
 
-    # Récupération des vidéos associées à l'utilisateur authentifié
-    search_response = youtube.search().list(part="snippet", type="video", forMine=True, maxResults=50).execute()
-    
-    video_ids = [item['id']['videoId'] for item in search_response.get('items', [])]
-    
-    if not video_ids:
-        return []
+    while True:
+        # Effectuez la requête pour la page actuelle
+        search_response = youtube.search().list(
+            part="snippet",
+            type="video",
+            forMine=True,
+            maxResults=max_results,  # Utilisez max_results au lieu de maxResults
+            pageToken=next_page_token
+        ).execute()
 
-    # Récupération des détails des vidéos pour vérifier le statut de confidentialité
-    videos_response = youtube.videos().list(part="snippet,status", id=",".join(video_ids), order="title").execute()
-    
-    # Filtrage des vidéos avec le statut de confidentialité 'private'
-    draft_videos = [video for video in videos_response.get('items', []) if video['status']['privacyStatus'] == 'private']
-    
+        video_items = search_response.get('items', [])
+
+        for video in video_items:
+            title = video['snippet']['title']
+            match = re.search(regex_pattern, title)
+            number = None 
+            if match:
+                number = int(match.group())
+
+            # Vérifiez si 'publishAt' est absent dans les détails de la vidéo
+            #if 'publishAt' not in video['snippet'] and number is not None and video['status']['privacyStatus'] == 'private':
+            # Vérifiez si 'status' n'est pas présent dans la réponse (la vidéo est en brouillon non programmée)
+            if 'status' not in video and number is not None: 
+                #print(f"Video Title: {video['snippet']['title']}, Privacy Status: {video['status']['privacyStatus']}")
+                print(f"Video Title: {video['snippet']['title']}, Number: {number}")
+                draft_videos.append((number, video))
+
+        # Vérifiez s'il y a plus de résultats à obtenir
+        next_page_token = search_response.get('nextPageToken')
+        if not next_page_token:
+            break
+
+    # Triez les vidéos en fonction des numéros extraits du titre
+    draft_videos.sort(key=lambda x: x[0])
+
+    # Récupérez les vidéos sans le numéro, si nécessaire
+    draft_videos = [video for _, video in draft_videos]
+
     return draft_videos
 
 def get_video_categories(youtube, region_code="US"):
@@ -80,7 +108,7 @@ def add_to_playlist(youtube, playlist_id, video_id):
                 "position": 0,
                 "resourceId": {
                     "kind": "youtube#video",
-                    "videoId": video_id
+                    "videoId": video_id['videoId']
                 }
             }
         }
@@ -89,7 +117,7 @@ def add_to_playlist(youtube, playlist_id, video_id):
     return response
 
 def update_video(youtube, video, title, description, publish_time, category_id):
-    video_id = video['id']
+    video_id = video['id']['videoId']
     request = youtube.videos().update(
         part="snippet,status",
         body={
@@ -134,7 +162,8 @@ def scenario_1 () :
     default_category_id = video_categories.get("Entertainment", None)
 
     # strategy to retrieve videos 
-    draft_videos = get_draft_videos(youtube)[:config["MAX_VIDEOS"]]  # Limit the number of videos
+    maxResults = config["REQ_MAX_RESULT"]
+    draft_videos = get_all_draft_videos(youtube,maxResults)[:config["MAX_VIDEOS"]]  # Limit the number of videos
     start_date = config["START_DATE"]
     
     for i, video in enumerate(draft_videos):
