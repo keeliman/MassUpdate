@@ -1,5 +1,5 @@
 import os
-import re  
+import re
 import pickle
 import datetime
 import random
@@ -9,6 +9,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from dotenv import load_dotenv
 
+DEBUG_MODE = True  # Set this to False for INFO mode
 
 # ---------------- Configuration Loading ----------------
 
@@ -26,8 +27,6 @@ def load_configurations():
         "REQ_MAX_RESULT": int(os.getenv('REQ_MAX_RESULT', 50)),  # Default to 50 if not set
         "START_DATE": datetime.datetime.strptime(os.getenv('START_DATE', datetime.datetime.now().strftime('%Y-%m-%d')), '%Y-%m-%d')
     }
-
-
 
 # ---------------- OAuth Authentication ----------------
 
@@ -50,17 +49,17 @@ def authenticate_with_oauth():
 
 # ---------------- YouTube API Interactions ----------------
 
-def get_all_draft_videos(youtube, max_results=400,regex_pattern = r'^\d+$'):
+def get_all_draft_videos(youtube, max_results=400, regex_pattern=r'^\d+$'):
     draft_videos = []
     next_page_token = None
 
     while True:
-        # Effectuez la requête pour la page actuelle
+        # Perform the request for the current page
         search_response = youtube.search().list(
             part="snippet",
             type="video",
             forMine=True,
-            maxResults=max_results,  # Utilisez max_results au lieu de maxResults
+            maxResults=max_results,
             pageToken=next_page_token
         ).execute()
 
@@ -69,27 +68,24 @@ def get_all_draft_videos(youtube, max_results=400,regex_pattern = r'^\d+$'):
         for video in video_items:
             title = video['snippet']['title']
             match = re.search(regex_pattern, title)
-            number = None 
+            number = None
             if match:
                 number = int(match.group())
 
-            # Vérifiez si 'publishAt' est absent dans les détails de la vidéo
-            #if 'publishAt' not in video['snippet'] and number is not None and video['status']['privacyStatus'] == 'private':
-            # Vérifiez si 'status' n'est pas présent dans la réponse (la vidéo est en brouillon non programmée)
-            if 'status' not in video and number is not None: 
-                #print(f"Video Title: {video['snippet']['title']}, Privacy Status: {video['status']['privacyStatus']}")
-                print(f"Video Title: {video['snippet']['title']}, Number: {number}")
+            # Check if 'status' is not present in the response (the video is in unscheduled draft)
+            if 'status' not in video and number is not None:
+                log(f"Video Title: {video['snippet']['title']}, Number: {number}")
                 draft_videos.append((number, video))
 
-        # Vérifiez s'il y a plus de résultats à obtenir
+        # Check if there are more results to fetch
         next_page_token = search_response.get('nextPageToken')
         if not next_page_token:
             break
 
-    # Triez les vidéos en fonction des numéros extraits du titre
+    # Sort videos based on numbers extracted from the title
     draft_videos.sort(key=lambda x: x[0])
 
-    # Récupérez les vidéos sans le numéro, si nécessaire
+    # Retrieve videos without the number, if needed
     draft_videos = [video for _, video in draft_videos]
 
     return draft_videos
@@ -98,7 +94,7 @@ def get_video_categories(youtube, region_code="US"):
     categories_response = youtube.videoCategories().list(part="snippet", regionCode=region_code).execute()
     return {category["snippet"]["title"]: category["id"] for category in categories_response.get("items", [])}
 
-# add to playlist 
+# Add to playlist
 def add_to_playlist(youtube, playlist_id, video_id):
     request = youtube.playlistItems().insert(
         part="snippet",
@@ -125,12 +121,12 @@ def update_video(youtube, video, title, description, publish_time, category_id):
             "snippet": {
                 "title": title,
                 "description": description,
-                "categoryId": category_id  
+                "categoryId": category_id
             },
             "status": {
                 "publishAt": publish_time.isoformat(),
                 "privacyStatus": "private",
-                "madeForKids": False  # Set to False to indicate "No, it's not made for kids"
+                "madeForKids": False
             }
         }
     )
@@ -149,21 +145,21 @@ def calculate_publish_time(start_date, index, first_interval, second_interval):
         hour = random.randint(second_interval[0], second_interval[1])
     return start_date + datetime.timedelta(days=index//2, hours=hour)
 
-# ---------------- Scenarios  ----------------
+# ---------------- Scenarios ----------------
 
-def scenario_1 () :
+def scenario_1():
     youtube = authenticate_with_oauth()
     config = load_configurations()
 
-    # Récupérer les catégories de vidéos
+    # Retrieve video categories
     video_categories = get_video_categories(youtube)
 
-    # Utilisez une catégorie par défaut, par exemple "Entertainment". Vous pouvez la changer selon vos besoins.
+    # Use a default category, e.g., "Entertainment". You can change it as needed.
     default_category_id = video_categories.get("Entertainment", None)
 
-    # strategy to retrieve videos 
+    # Strategy to retrieve videos
     maxResults = config["REQ_MAX_RESULT"]
-    draft_videos = get_all_draft_videos(youtube,maxResults)[:config["MAX_VIDEOS"]]  # Limit the number of videos
+    draft_videos = get_all_draft_videos(youtube, maxResults)[:config["MAX_VIDEOS"]]
     start_date = config["START_DATE"]
     
     for i, video in enumerate(draft_videos):
@@ -172,13 +168,22 @@ def scenario_1 () :
         try:
             update_video(youtube, video, title, config["DESCRIPTION"], publish_time, default_category_id)
             add_to_playlist(youtube, config["PLAYLIST_ID"], video['id'])
-            print(f"Updated video {video['snippet']['title']} for publishing at {publish_time}")
+            log(f"Updated video {video['snippet']['title']} for publishing at {publish_time}")
         except HttpError as e:
-            print(f"An error occurred while updating video {video['snippet']['title']}: {e}")
+            log(f"An error occurred while updating video {video['snippet']['title']}: {e}")
+
+# ---------------- Logging ----------------
+
+def log(message):
+    if DEBUG_MODE:
+        print(f"[DEBUG] {message}")
+    else:
+        print(f"[INFO] {message}")
 
 # ---------------- Main Execution ----------------
+
 def main():
-    scenario_1 ()
+    scenario_1()
 
 if __name__ == "__main__":
     main()
