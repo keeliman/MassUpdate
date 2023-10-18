@@ -73,15 +73,19 @@ def authenticate_with_oauth():
     if os.path.exists('token.pickle'):
         with open('token.pickle', 'rb') as token:
             creds = pickle.load(token)
+            logging.info("Loaded credentials from token.pickle.")
     
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
+            logging.info("Refreshing expired credentials.")
             creds.refresh(Request())
         else:
+            logging.info("No valid credentials found. Starting OAuth2 flow.")
             flow = InstalledAppFlow.from_client_secrets_file('credentials.json', ['https://www.googleapis.com/auth/youtube.force-ssl'])
             creds = flow.run_local_server(port=0)
             with open('token.pickle', 'wb') as token:
                 pickle.dump(creds, token)
+            logging.info("Credentials obtained and saved to token.pickle.")
     
     return build('youtube', 'v3', credentials=creds)
 
@@ -180,8 +184,11 @@ def is_valid_date_format(date_str):
 
 def get_video_categories(youtube, region_code="US"):
     try:
+        logging.debug("Fetching video categories.")
         categories_response = youtube.videoCategories().list(part="snippet", regionCode=region_code).execute()
+        logging.debug(f"Received {len(categories_response.get('items', []))} categories.")
         return {category["snippet"]["title"]: category["id"] for category in categories_response.get("items", [])}
+        
     except HttpError as e:
         logging.error(f"Error fetching video categories: {e}")
         return {}
@@ -241,7 +248,7 @@ def calculate_publish_time(start_date, index, first_interval, second_interval):
 
 def update_videos(youtube, videos, config):
     quota_counter = 0
-    MAX_QUOTA = 10000  # Daily quota limit
+    MAX_QUOTA = 100000  # Daily quota limit
     start_date = config["START_DATE"]
 
     video_categories = get_video_categories(youtube)
@@ -264,9 +271,12 @@ def update_videos(youtube, videos, config):
         try:
             update_video(youtube, video, title, config["DESCRIPTION"], publish_time, video_categories["Entertainment"])
             quota_counter += 1600  # 1600 units for video update
+            logging.info(f"Updated video: {video['snippet']['title']} with new title: {title} and scheduled publish time: {publish_time}")
 
             add_to_playlist(youtube, config["PLAYLIST_ID"], video['id'])
             quota_counter += 50  # 50 units for adding to playlist
+            logging.info(f"Added video: {video['snippet']['title']} to playlist: {config['PLAYLIST_ID']}")
+
 
         except HttpError as e:
             logging.error(f"Error updating video {video['snippet']['title']}: {e}")
@@ -276,13 +286,16 @@ def update_videos(youtube, videos, config):
 
 
 def scenario_1():
+    logging.info("Starting scenario 1.")
     youtube = authenticate_with_oauth()
     config = load_configurations()
     max_results = config["REQ_MAX_RESULT"]
     draft_videos = get_all_draft_videos(youtube, config['START_VIDEO_NUMBER'], config['END_VIDEO_NUMBER'], max_results)[:config["MAX_VIDEOS"]]
-    update_videos(youtube, draft_videos, config)  
+    update_videos(youtube, draft_videos, config)
+    logging.info("Finished scenario 1.")  
 
 def scenario_2():
+    logging.info("Starting scenario 2.")
     youtube = authenticate_with_oauth()
     config = load_configurations()
     temp_date = config['TEMP_DATE']
@@ -294,14 +307,12 @@ def scenario_2():
     max_results = config["REQ_MAX_RESULT"]
     draft_videos = get_scheduled_videos_on_date(youtube, temp_date, max_results)[:config["MAX_VIDEOS"]]
     update_videos(youtube, draft_videos, config)  
-
+    logging.info("Finished scenario 2.")  
 
 
 # ---------------- Main Execution ----------------
 
 def main(scenario_name):
-    youtube = authenticate_with_oauth()
-    config = load_configurations()
 
     scenarios = {
         "scenario_1": scenario_1,
