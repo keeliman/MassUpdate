@@ -27,8 +27,8 @@ def load_configurations():
         "TITLE_SUFFIX": os.getenv('TITLE_SUFFIX'),
         "PLAYLIST_ID": os.getenv('PLAYLIST_ID'),
         "DESCRIPTION": os.getenv('DESCRIPTION').replace('\\n', '\n'),
-        "FIRST_INTERVAL": (int(os.getenv('FIRST_INTERVAL_START'),1), int(os.getenv('FIRST_INTERVAL_END'),9)), # Par défaut ( 1,9 )
-        "SECOND_INTERVAL": (int(os.getenv('SECOND_INTERVAL_START'),13), int(os.getenv('SECOND_INTERVAL_END'),23)), # Par défaut ( 13 , 23 )
+        "FIRST_INTERVAL": (int(os.getenv('FIRST_INTERVAL_START',1)), int(os.getenv('FIRST_INTERVAL_END',9))), # Par défaut ( 1,9 )
+        "SECOND_INTERVAL": (int(os.getenv('SECOND_INTERVAL_START',13)), int(os.getenv('SECOND_INTERVAL_END',23))), # Par défaut ( 13 , 23 )
         "TEMP_DATE": os.getenv('TEMP_DATE',datetime.datetime.now().strftime('%Y-%m-%d')), 
         "MAX_VIDEOS": int(os.getenv('MAX_VIDEOS', 400)),  # Par défaut à 400 si non défini
         "REQ_MAX_RESULT": int(os.getenv('REQ_MAX_RESULT', 400)),  # Par défaut à 400 si non défini
