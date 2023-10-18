@@ -23,15 +23,15 @@ def load_configurations():
     load_dotenv()
     return {
         "API_KEY": os.getenv('API_KEY'),
-        "PREFIX": os.getenv('PREFIX'),
-        "SUFFIX": os.getenv('SUFFIX'),
+        "TITLE_PREFIX": os.getenv('TITLE_PREFIX'),
+        "TITLE_SUFFIX": os.getenv('TITLE_SUFFIX'),
         "PLAYLIST_ID": os.getenv('PLAYLIST_ID'),
         "DESCRIPTION": os.getenv('DESCRIPTION').replace('\\n', '\n'),
-        "FIRST_INTERVAL": (int(os.getenv('FIRST_INTERVAL_START')), int(os.getenv('FIRST_INTERVAL_END'))),
-        "SECOND_INTERVAL": (int(os.getenv('SECOND_INTERVAL_START')), int(os.getenv('SECOND_INTERVAL_END'))),
-        "TEMP_DATE": os.getenv('TEMP_DATE'),
-        "MAX_VIDEOS": int(os.getenv('MAX_VIDEOS', 50)),  # Par défaut à 50 si non défini
-        "REQ_MAX_RESULT": int(os.getenv('REQ_MAX_RESULT', 50)),  # Par défaut à 50 si non défini
+        "FIRST_INTERVAL": (int(os.getenv('FIRST_INTERVAL_START'),1), int(os.getenv('FIRST_INTERVAL_END'),9)), # Par défaut ( 1,9 )
+        "SECOND_INTERVAL": (int(os.getenv('SECOND_INTERVAL_START'),13), int(os.getenv('SECOND_INTERVAL_END'),23)), # Par défaut ( 13 , 23 )
+        "TEMP_DATE": os.getenv('TEMP_DATE',datetime.datetime.now().strftime('%Y-%m-%d')), 
+        "MAX_VIDEOS": int(os.getenv('MAX_VIDEOS', 400)),  # Par défaut à 400 si non défini
+        "REQ_MAX_RESULT": int(os.getenv('REQ_MAX_RESULT', 400)),  # Par défaut à 400 si non défini
         "START_DATE": datetime.datetime.strptime(os.getenv('START_DATE', datetime.datetime.now().strftime('%Y-%m-%d')), '%Y-%m-%d'),
         "START_VIDEO_NUMBER": int(os.getenv('START_VIDEO_NUMBER', 130)),  # Par défaut à 130 si non défini
         "END_VIDEO_NUMBER": int(os.getenv('END_VIDEO_NUMBER', 200))  # Par défaut à 200 si non défini
@@ -198,8 +198,8 @@ def update_video(youtube, video, title, description, publish_time, category_id):
 
 # ---------------- Video Processing ----------------
 
-def process_video_title(video, prefix, suffix):
-    return prefix + video['snippet']['title'] + suffix
+def process_video_title(video, TITLE_PREFIX, TITLE_SUFFIX):
+    return TITLE_PREFIX + video['snippet']['title'] + TITLE_SUFFIX
 
 def calculate_publish_time(start_date, index, first_interval, second_interval):
     if index % 2 == 0:
@@ -222,7 +222,7 @@ def update_videos(youtube, videos, config):
 
     # First, gather all videos that need updating
     for i, video in enumerate(videos):
-        title = process_video_title(video, config["PREFIX"], config["SUFFIX"])
+        title = process_video_title(video, config["TITLE_PREFIX"], config["TITLE_SUFFIX"])
         publish_time = calculate_publish_time(start_date, i, config["FIRST_INTERVAL"], config["SECOND_INTERVAL"])
         videos_to_update.append((video, title, publish_time))
 
