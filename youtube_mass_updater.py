@@ -21,8 +21,7 @@ DEBUG_MODE = True  # Set this to False for INFO mode
 
 def load_configurations():
     load_dotenv()
-    return {
-        "API_KEY": os.getenv('API_KEY'),
+    config = {
         "TITLE_PREFIX": os.getenv('TITLE_PREFIX'),
         "TITLE_SUFFIX": os.getenv('TITLE_SUFFIX'),
         "PLAYLIST_ID": os.getenv('PLAYLIST_ID'),
@@ -36,6 +35,36 @@ def load_configurations():
         "START_VIDEO_NUMBER": int(os.getenv('START_VIDEO_NUMBER', 130)),  # Par défaut à 130 si non défini
         "END_VIDEO_NUMBER": int(os.getenv('END_VIDEO_NUMBER', 200))  # Par défaut à 200 si non défini
     }
+
+    if not validate_configurations(config):
+        exit(1)  # Quitter le script si les configurations ne sont pas valides
+
+    return config
+    
+
+def validate_configurations(config):
+    # Vérification de TITLE_PREFIX
+    if not config["TITLE_PREFIX"]:
+        logging.error("TITLE_PREFIX est manquant ou vide dans .env.")
+        return False
+
+    # Vérification de TITLE_SUFFIX
+    if not config["TITLE_SUFFIX"]:
+        logging.error("TITLE_SUFFIX est manquant ou vide dans .env.")
+        return False
+
+    # Vérification de PLAYLIST_ID
+    if not config["PLAYLIST_ID"]:
+        logging.error("PLAYLIST_ID est manquant ou vide dans .env.")
+        return False
+
+    # Vérification de DESCRIPTION
+    if not config["DESCRIPTION"]:
+        logging.error("DESCRIPTION est manquant ou vide dans .env.")
+        return False
+
+
+    return True
 
 # ---------------- OAuth Authentication ----------------
 
