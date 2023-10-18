@@ -26,9 +26,16 @@ This script allows users to automate the process of updating YouTube video detai
 
   
 ## Configuration
+- Rename `.env.example` to `.env`.
+- Fill in the required details in the `.env` file. The following are the key configurations you need to set:
+- `API_KEY`: Your YouTube API key.
+- `TITLE_PREFIX` & `TITLE_SUFFIX`: Prefix and suffix to be added to video titles.
+- `DESCRIPTION`: Video description template.
+- `PLAYLIST_ID`: ID of the playlist where videos should be added.
+- Starting Date For Schedule, ID interval ( starting from .. Ending to .. ) for filtering videos.
 
-- Rename .env.example to .env.
-- Fill in the required details in the .env file.
+Refer to the `.env.example` file for a complete list and descriptions.
+
 
 ## Usage
 - Run the script:
@@ -38,7 +45,16 @@ This script allows users to automate the process of updating YouTube video detai
 - The script will then retrieve all draft videos, update their details, and schedule them for publishing.
 
 ## Debug Mode
-- To enable debug mode, set the DEBUG_MODE variable at the top of the youtube_mass_updater.py script to True. This will print detailed debug messages during the script's execution.
+To enable debug mode, set the `DEBUG_MODE` variable at the top of the `youtube_mass_updater.py` script to `True`. This will print detailed debug messages during the script's execution.
+
+## Limitations and Quota
+- The YouTube API has a daily quota limit. For most projects, the default daily quota is 10,000 units/day. Each type of request (e.g., read, write, update) costs a certain number of quota units. For instance:
+- A video update request might cost around 1,600 units.
+- Adding a video to a playlist might cost around 50 units.
+
+Ensure you monitor your API usage to avoid reaching the limit. You can check your quota usage in the [Google Developer Console](https://console.developers.google.com/).
+
+- The script currently supports two main scenarios for updating videos. You may need to adjust the script or add new scenarios to fit specific needs.
 
 ## Contribution
 Feel free to fork this repository, make changes, and submit pull requests. Any kind of contribution is welcome!
