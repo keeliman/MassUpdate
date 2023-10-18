@@ -325,7 +325,7 @@ def scenario_1():
     if scheduled_videos:
         latest_date = max([datetime.datetime.fromisoformat(video['status']['publishAt']) for video in scheduled_videos])
         config["START_DATE"] = latest_date + datetime.timedelta(days=1)
-        logging.info(f"Setting start date to: {config['START_DATE']}")
+        logging.info(f"Found the latest scheduled video date: {config['START_DATE']}. Using this date as the starting point for scheduling draft videos.")
     else:
         logging.info(f"No scheduled videos found. Using default start date from config: {config['START_DATE']}")
     
