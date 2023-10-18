@@ -33,7 +33,9 @@ def load_configurations():
         "REQ_MAX_RESULT": int(os.getenv('REQ_MAX_RESULT', 400)),  # Par défaut à 400 si non défini
         "START_DATE": datetime.datetime.strptime(os.getenv('START_DATE', datetime.datetime.now().strftime('%Y-%m-%d')), '%Y-%m-%d'),
         "START_VIDEO_NUMBER": int(os.getenv('START_VIDEO_NUMBER', 130)),  # Par défaut à 130 si non défini
-        "END_VIDEO_NUMBER": int(os.getenv('END_VIDEO_NUMBER', 200))  # Par défaut à 200 si non défini
+        "END_VIDEO_NUMBER": int(os.getenv('END_VIDEO_NUMBER', 200)),  # Par défaut à 200 si non défini
+        "VIDEOS_PER_DAY": int(os.getenv('VIDEOS_PER_DAY', 2)),  # Par défaut à 2 si non défini
+
     }
 
     if not validate_configurations(config):
@@ -93,11 +95,13 @@ def authenticate_with_oauth():
 
 
 def get_all_draft_videos(youtube, start_video_number=1, end_video_number=300, max_results=400, regex_pattern=CONTAINS_NUMBERS_REGEX):
-    all_private_videos = []
+    relevant_video_ids = []
     draft_videos = []
     scheduled_videos = []
+
     next_page_token = None
 
+    # first retrieved suitable IDs
     while True:
         try:
             search_response = youtube.search().list(
@@ -116,22 +120,42 @@ def get_all_draft_videos(youtube, start_video_number=1, end_video_number=300, ma
         for video in video_items:
             title = video['snippet']['title']
             match = re.search(regex_pattern, title)
-            number = None
             if match:
                 number = int(match.group())
                 if start_video_number <= number < end_video_number:
-                    all_private_videos.append(video)
+                    relevant_video_ids.append(video['id']['videoId'])
 
         next_page_token = search_response.get('nextPageToken')
         if not next_page_token:
             break
 
-    # Filtrer les vidéos pour créer les listes draft_videos et scheduled_videos
-    for video in all_private_videos:
-        if 'status' not in video:
-            draft_videos.append(video)
-        elif 'publishAt' in video['status']:
-            scheduled_videos.append(video)
+    # Fetch detailed information for relevant videos in batches of 50
+    BATCH_SIZE = 50
+    for i in range(0, len(relevant_video_ids), BATCH_SIZE):
+        batch_ids = relevant_video_ids[i:i+BATCH_SIZE]
+        try:
+            videos_response = youtube.videos().list(
+                part="snippet,status",
+                id=",".join(batch_ids)
+            ).execute()
+
+            for video in videos_response.get('items', []):
+                if video['status']['privacyStatus'] == 'private' and 'publishAt' not in video['status']:
+                    draft_videos.append(video)
+                    logging.debug(f"Video '{video['snippet']['title']}' is a draft. Adding to draft_videos.")
+                elif 'publishAt' in video['status']:
+                    scheduled_videos.append(video)
+                    logging.debug(f"Video '{video['snippet']['title']}' has a scheduled publish date. Adding to scheduled_videos.")
+        except HttpError as e:
+            logging.error(f"Error fetching detailed video information for batch starting with {i}: {e}")
+
+    # Sort draft_videos based on numbers extracted from titles
+    draft_videos.sort(key=lambda video: int(re.search(regex_pattern, video['snippet']['title']).group()))
+    logging.debug("Draft list sorted.")
+
+    # Sort scheduled_videos based on numbers extracted from titles
+    scheduled_videos.sort(key=lambda video: int(re.search(regex_pattern, video['snippet']['title']).group()))
+    logging.debug("Scheduled Video list sorted.")
 
     return draft_videos, scheduled_videos
 
@@ -208,7 +232,7 @@ def add_to_playlist(youtube, playlist_id, video_id):
                 "position": 0,
                 "resourceId": {
                     "kind": "youtube#video",
-                    "videoId": video_id['videoId']
+                    "videoId": video_id
                 }
             }
         }
@@ -226,7 +250,7 @@ def update_video(youtube, video, title, description, publish_time, category_id):
         logging.error(f"Title length for video {video['snippet']['title']} exceeds the maximum limit. Title: {title}. Skipping update.")
         return
 
-    video_id = video['id']['videoId']
+    video_id = video['id']
     try:
         request = youtube.videos().update(
             part="snippet,status",
@@ -255,12 +279,20 @@ def update_video(youtube, video, title, description, publish_time, category_id):
 def process_video_title(video, TITLE_PREFIX, TITLE_SUFFIX):
     return TITLE_PREFIX + video['snippet']['title'] + TITLE_SUFFIX
 
-def calculate_publish_time(start_date, index, first_interval, second_interval):
-    if index % 2 == 0:
-        hour = random.randint(first_interval[0], first_interval[1])
+def calculate_publish_time(start_date, index, first_interval, second_interval, videos_per_day):
+    if videos_per_day == 1:
+        hour = random.randint(first_interval[0], second_interval[1])  # Si une seule vidéo par jour, utilisez toute la plage horaire
+        return start_date + datetime.timedelta(days=index, hours=hour)
+    elif videos_per_day == 2:
+        if index % 2 == 0:
+            hour = random.randint(first_interval[0], first_interval[1])
+        else:
+            hour = random.randint(second_interval[0], second_interval[1])
+        return start_date + datetime.timedelta(days=index//2, hours=hour)
     else:
-        hour = random.randint(second_interval[0], second_interval[1])
-    return start_date + datetime.timedelta(days=index//2, hours=hour)
+        logging.error("Unsupported number of videos per day.")
+        return start_date
+
 
 # ---------------- Scenarios ----------------
 
@@ -287,7 +319,7 @@ def update_videos(youtube, videos, config):
         
         # Then process the title with PREFIX and SUFFIX
         title = process_video_title(video, config["TITLE_PREFIX"], config["TITLE_SUFFIX"])
-        publish_time = calculate_publish_time(start_date, i, config["FIRST_INTERVAL"], config["SECOND_INTERVAL"])
+        publish_time = calculate_publish_time(start_date, i, config["FIRST_INTERVAL"], config["SECOND_INTERVAL"], config["VIDEOS_PER_DAY"])
         videos_to_update.append((video, title, publish_time))
 
     # Update videos while keeping track of the quota
@@ -320,11 +352,13 @@ def scenario_1():
     max_results = config["REQ_MAX_RESULT"]
     draft_videos, scheduled_videos = get_all_draft_videos(youtube, config['START_VIDEO_NUMBER'], config['END_VIDEO_NUMBER'], max_results)
     
-    # Si des vidéos programmées sont présentes, déterminez la date de programmation la plus lointaine.
-    # Sinon, utilisez la date START_DATE de la configuration.
+    # If scheduled videos are present, determine the earliest scheduled date.
+    # Otherwise, use the START_DATE from the configuration.
     if scheduled_videos:
         latest_date = max([datetime.datetime.fromisoformat(video['status']['publishAt']) for video in scheduled_videos])
-        config["START_DATE"] = latest_date + datetime.timedelta(days=1)
+        latest_date_date_only = latest_date.date()  # This extracts only the date, without the time.
+        config["START_DATE"] = datetime.datetime(latest_date_date_only.year, latest_date_date_only.month, latest_date_date_only.day, 0, 0, 0, 0) #set to midnight
+
         logging.info(f"Found the latest scheduled video date: {config['START_DATE']}. Using this date as the starting point for scheduling draft videos.")
     else:
         logging.info(f"No scheduled videos found. Using default start date from config: {config['START_DATE']}")
