@@ -93,7 +93,9 @@ def authenticate_with_oauth():
 
 
 def get_all_draft_videos(youtube, start_video_number=1, end_video_number=300, max_results=400, regex_pattern=CONTAINS_NUMBERS_REGEX):
+    all_private_videos = []
     draft_videos = []
+    scheduled_videos = []
     next_page_token = None
 
     while True:
@@ -118,18 +120,21 @@ def get_all_draft_videos(youtube, start_video_number=1, end_video_number=300, ma
             if match:
                 number = int(match.group())
                 if start_video_number <= number < end_video_number:
-                    if 'status' not in video:
-                        draft_videos.append(video)
-                        logging.debug(f"Adding video: {title}, Number: {number}")
+                    all_private_videos.append(video)
 
         next_page_token = search_response.get('nextPageToken')
         if not next_page_token:
             break
 
-    # Sort videos based on numbers extracted from the title
-    draft_videos.sort(key=lambda x: int(re.search(regex_pattern, x['snippet']['title']).group()))
+    # Filtrer les vidéos pour créer les listes draft_videos et scheduled_videos
+    for video in all_private_videos:
+        if 'status' not in video:
+            draft_videos.append(video)
+        elif 'publishAt' in video['status']:
+            scheduled_videos.append(video)
 
-    return draft_videos
+    return draft_videos, scheduled_videos
+
 
 def get_scheduled_videos_on_date(youtube, target_date, max_results=400, regex_pattern=ONLY_NUMBERS_REGEX):
     scheduled_videos = []
@@ -212,24 +217,37 @@ def add_to_playlist(youtube, playlist_id, video_id):
     return response
 
 def update_video(youtube, video, title, description, publish_time, category_id):
+    
+    # Vérification du titre
+    if not title or len(title.strip()) == 0:
+        logging.error(f"Attempted to set an empty title for video: {video['snippet']['title']}. Skipping update.")
+        return
+    elif len(title) > 100:
+        logging.error(f"Title length for video {video['snippet']['title']} exceeds the maximum limit. Title: {title}. Skipping update.")
+        return
+
     video_id = video['id']['videoId']
-    request = youtube.videos().update(
-        part="snippet,status",
-        body={
-            "id": video_id,
-            "snippet": {
-                "title": title,
-                "description": description,
-                "categoryId": category_id
-            },
-            "status": {
-                "publishAt": publish_time.isoformat(),
-                "privacyStatus": "private",
-                "madeForKids": False
+    try:
+        request = youtube.videos().update(
+            part="snippet,status",
+            body={
+                "id": video_id,
+                "snippet": {
+                    "title": title,
+                    "description": description,
+                    "categoryId": category_id
+                },
+                "status": {
+                    "publishAt": publish_time.isoformat(),
+                    "privacyStatus": "private",
+                    "madeForKids": False
+                }
             }
-        }
-    )
-    response = request.execute()
+        )
+        response = request.execute()
+        
+    except HttpError as e:
+        logging.error(f"Error updating video {video['snippet']['title']} with title {title}: {e}")
     return response
 
 # ---------------- Video Processing ----------------
@@ -258,6 +276,16 @@ def update_videos(youtube, videos, config):
 
     # First, gather all videos that need updating
     for i, video in enumerate(videos):
+        current_title = video['snippet']['title']
+        
+        # Check if the current title is not numeric
+        if not re.match(ONLY_NUMBERS_REGEX, current_title):
+            # Reset the title to just the video number
+            video_number = int(re.search(CONTAINS_NUMBERS_REGEX, current_title).group())
+            video['snippet']['title'] = str(video_number)
+            logging.info(f"Resetting title for video '{current_title}' to '{video_number}' due to previous incomplete update.")
+        
+        # Then process the title with PREFIX and SUFFIX
         title = process_video_title(video, config["TITLE_PREFIX"], config["TITLE_SUFFIX"])
         publish_time = calculate_publish_time(start_date, i, config["FIRST_INTERVAL"], config["SECOND_INTERVAL"])
         videos_to_update.append((video, title, publish_time))
@@ -277,7 +305,6 @@ def update_videos(youtube, videos, config):
             quota_counter += 50  # 50 units for adding to playlist
             logging.info(f"Added video: {video['snippet']['title']} to playlist: {config['PLAYLIST_ID']}")
 
-
         except HttpError as e:
             logging.error(f"Error updating video {video['snippet']['title']}: {e}")
 
@@ -285,13 +312,24 @@ def update_videos(youtube, videos, config):
 
 
 
+
 def scenario_1():
-    logging.info("Starting scenario 1.")
     youtube = authenticate_with_oauth()
     config = load_configurations()
+    
     max_results = config["REQ_MAX_RESULT"]
-    draft_videos = get_all_draft_videos(youtube, config['START_VIDEO_NUMBER'], config['END_VIDEO_NUMBER'], max_results)[:config["MAX_VIDEOS"]]
-    update_videos(youtube, draft_videos, config)
+    draft_videos, scheduled_videos = get_all_draft_videos(youtube, config['START_VIDEO_NUMBER'], config['END_VIDEO_NUMBER'], max_results)
+    
+    # Si des vidéos programmées sont présentes, déterminez la date de programmation la plus lointaine.
+    # Sinon, utilisez la date START_DATE de la configuration.
+    if scheduled_videos:
+        latest_date = max([datetime.datetime.fromisoformat(video['status']['publishAt']) for video in scheduled_videos])
+        config["START_DATE"] = latest_date + datetime.timedelta(days=1)
+        logging.info(f"Setting start date to: {config['START_DATE']}")
+    else:
+        logging.info(f"No scheduled videos found. Using default start date from config: {config['START_DATE']}")
+    
+    update_videos(youtube, draft_videos[:config["MAX_VIDEOS"]], config)
     logging.info("Finished scenario 1.")  
 
 def scenario_2():
