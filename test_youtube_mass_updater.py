@@ -57,8 +57,12 @@ class TestYoutubeScheduler(unittest.TestCase):
         self.assertLessEqual(result.hour, 9)
 
     def test_is_valid_date_format(self):
-        self.assertTrue(is_valid_date_format('2023-10-17'))
-        self.assertFalse(is_valid_date_format('17-10-2023'))
+        self.assertTrue(is_valid_date_format('2023-10-18'))  # Valid format
+        self.assertFalse(is_valid_date_format('202310-18'))  # Missing year digits
+        self.assertFalse(is_valid_date_format('18-10-2023'))  # Reversed format
+        self.assertFalse(is_valid_date_format('18-10-23'))   # Shortened year
+        self.assertFalse(is_valid_date_format('2023/10/18')) # Wrong delimiter
+        self.assertFalse(is_valid_date_format(''))            # Empty string
 
 if __name__ == '__main__':
     unittest.main(exit=False)
