@@ -8,6 +8,7 @@ from googleapiclient.errors import HttpError
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from dotenv import load_dotenv
+from datetime import timedelta
 import logging
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -298,26 +299,32 @@ def update_videos(youtube, videos, config):
 
 
 
+def get_latest_date_plus_one_day(scheduled_videos):
+    if scheduled_videos:
+        latest_date = max([datetime.datetime.strptime(video['status']['publishAt'], '%Y-%m-%dT%H:%M:%S.%fZ') for video in scheduled_videos])
+        latest_date_date_only = latest_date.date()
+        latest_date_plus_one_day = latest_date_date_only + timedelta(days=1)
+        return datetime.datetime(latest_date_plus_one_day.year, latest_date_plus_one_day.month, latest_date_plus_one_day.day, 0, 0, 0, 0)
+    else:
+        return None
+
 def scenario_1():
     youtube = authenticate_with_oauth()
     config = load_configurations()
     
     max_results = config["REQ_MAX_RESULT"]
     draft_videos, scheduled_videos = get_all_draft_videos(youtube, config['START_VIDEO_NUMBER'], config['END_VIDEO_NUMBER'], max_results)
-    
-    # If scheduled videos are present, determine the earliest scheduled date.
-    # Otherwise, use the START_DATE from the configuration.
-    if scheduled_videos:
-        latest_date = max([datetime.datetime.fromisoformat(video['status']['publishAt']) for video in scheduled_videos])
-        latest_date_date_only = latest_date.date()  # This extracts only the date, without the time.
-        config["START_DATE"] = datetime.datetime(latest_date_date_only.year, latest_date_date_only.month, latest_date_date_only.day, 0, 0, 0, 0) #set to midnight
+   
+    config["START_DATE"] = get_latest_date_plus_one_day(scheduled_videos) or config["START_DATE"]
 
+    if scheduled_videos:
         logging.info(f"Found the latest scheduled video date: {config['START_DATE']}. Using this date as the starting point for scheduling draft videos.")
     else:
         logging.info(f"No scheduled videos found. Using default start date from config: {config['START_DATE']}")
     
     update_videos(youtube, draft_videos[:config["MAX_VIDEOS"]], config)
-    logging.info("Finished scenario 1.")  
+    logging.info("Finished scenario 1.")
+
 
 
 # ---------------- Main Execution ----------------

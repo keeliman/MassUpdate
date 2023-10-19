@@ -2,7 +2,7 @@ import unittest
 import datetime
 import youtube_mass_updater as ymu
 
-from youtube_mass_updater import load_configurations, validate_configurations, process_video_title, calculate_publish_time, is_valid_date_format
+from youtube_mass_updater import load_configurations, validate_configurations, process_video_title, calculate_publish_time, is_valid_date_format,get_latest_date_plus_one_day
 
 class TestYoutubeScheduler(unittest.TestCase):
 
@@ -64,6 +64,25 @@ class TestYoutubeScheduler(unittest.TestCase):
         self.assertFalse(is_valid_date_format('18-10-23'))   # Shortened year
         self.assertFalse(is_valid_date_format('2023/10/18')) # Wrong delimiter
         self.assertFalse(is_valid_date_format(''))            # Empty string
+
+    def test_get_latest_date_plus_one_day_with_scheduled_videos(self):
+        scheduled_videos = [
+            {'status': {'publishAt': '2023-10-19T12:00:00.000Z'}},
+            {'status': {'publishAt': '2023-10-20T12:00:00.000Z'}},
+        ]
+        expected_date = datetime.datetime(2023, 10, 21, 0, 0, 0, 0)  # La date attendue est un jour après la date la plus récente
+
+        result = get_latest_date_plus_one_day(scheduled_videos)
+
+        self.assertEqual(result, expected_date)
+
+    def test_get_latest_date_plus_one_day_with_no_scheduled_videos(self):
+        scheduled_videos = []
+        expected_date = None  # Aucune date attendue car il n'y a pas de vidéos programmées
+
+        result = get_latest_date_plus_one_day(scheduled_videos)
+
+        self.assertEqual(result, expected_date)
 
 from unittest.mock import patch, MagicMock
 class TestYouTubeAPIInteractions(unittest.TestCase):
