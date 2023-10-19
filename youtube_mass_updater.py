@@ -325,8 +325,7 @@ def scenario_1():
 def main(scenario_name):
 
     scenarios = {
-        "scenario_1": scenario_1,
-        "scenario_2": scenario_2
+        "scenario_1": scenario_1
     }
 
     if scenario_name in scenarios:
