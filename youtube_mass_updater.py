@@ -224,9 +224,10 @@ def update_video(youtube, video, title, description, publish_time, category_id):
         )
         response = request.execute()
         
-    except HttpError as e:
-        logging.error(f"Error updating video {video['snippet']['title']} with title {title}: {e}")
-    return response
+    except Exception as e:
+        # Gérer l'erreur ici, par exemple, en enregistrant l'erreur dans un journal
+        print(f"Une erreur s'est produite lors de la mise à jour de la vidéo : {str(e)}")
+        return None  # Ou renvoyez une valeur par défaut ou raise une exception personnalisée si nécessaire
 
 # ---------------- Video Processing ----------------
 
@@ -301,7 +302,7 @@ def update_videos(youtube, videos, config):
 
 def get_latest_date_plus_one_day(scheduled_videos):
     if scheduled_videos:
-        latest_date = max([datetime.datetime.strptime(video['status']['publishAt'], '%Y-%m-%dT%H:%M:%S.%fZ') for video in scheduled_videos])
+        latest_date = max([datetime.datetime.strptime(video['status']['publishAt'], '%Y-%m-%dT%H:%M:%SZ') for video in scheduled_videos])
         latest_date_date_only = latest_date.date()
         latest_date_plus_one_day = latest_date_date_only + timedelta(days=1)
         return datetime.datetime(latest_date_plus_one_day.year, latest_date_plus_one_day.month, latest_date_plus_one_day.day, 0, 0, 0, 0)
