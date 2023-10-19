@@ -1,5 +1,6 @@
 import unittest
 import datetime
+import youtube_mass_updater as ymu
 
 from youtube_mass_updater import load_configurations, validate_configurations, process_video_title, calculate_publish_time, is_valid_date_format
 
@@ -63,6 +64,47 @@ class TestYoutubeScheduler(unittest.TestCase):
         self.assertFalse(is_valid_date_format('18-10-23'))   # Shortened year
         self.assertFalse(is_valid_date_format('2023/10/18')) # Wrong delimiter
         self.assertFalse(is_valid_date_format(''))            # Empty string
+
+from unittest.mock import patch, MagicMock
+class TestYouTubeAPIInteractions(unittest.TestCase):
+
+    @patch('youtube_mass_updater.build')
+    def test_get_all_draft_videos(self, mock_youtube):
+
+        # Simulating a search response from the YouTube API
+        mock_search_response = {
+            'items': [
+                {'id': {'videoId': '1'}, 'snippet': {'title': 'Video 1'}},
+                {'id': {'videoId': '2'}, 'snippet': {'title': 'Video 2'}},
+                # ... Add more mock videos if needed
+            ],
+            'nextPageToken': None  # Simulating that there's only one page of results
+        }
+
+        # Simulating a videos response from the YouTube API
+        mock_videos_response = {
+            'items': [
+                {'id': '1', 'snippet': {'title': 'Video 1'}, 'status': {'privacyStatus': 'private'}},
+                {'id': '2', 'snippet': {'title': 'Video 2'}, 'status': {'privacyStatus': 'private'}},
+                # ... Add more mock video details if needed
+            ]
+        }
+
+        # Setting the mock responses
+        mock_youtube.search().list().execute.return_value = mock_search_response
+        mock_youtube.videos().list().execute.return_value = mock_videos_response
+
+        # Call the function
+        draft_videos, scheduled_videos = ymu.get_all_draft_videos(mock_youtube)
+
+        # Assertions
+        self.assertEqual(len(draft_videos), 2)  # Assuming both videos are drafts
+        self.assertEqual(len(scheduled_videos), 0)  # Assuming no videos are scheduled
+
+        # Check if the videos are sorted correctly
+        self.assertEqual(draft_videos[0]['snippet']['title'], 'Video 1')
+        self.assertEqual(draft_videos[1]['snippet']['title'], 'Video 2')
+
 
 if __name__ == '__main__':
     unittest.main(exit=False)

@@ -160,53 +160,6 @@ def get_all_draft_videos(youtube, start_video_number=1, end_video_number=300, ma
     return draft_videos, scheduled_videos
 
 
-def get_scheduled_videos_on_date(youtube, target_date, max_results=400, regex_pattern=ONLY_NUMBERS_REGEX):
-    scheduled_videos = []
-    next_page_token = None
-
-    while True:
-        # Perform the request for the current page
-        search_response = youtube.search().list(
-            part="snippet",
-            type="video",
-            forMine=True,
-            maxResults=max_results,
-            pageToken=next_page_token
-        ).execute()
-
-        video_ids = [item['id']['videoId'] for item in search_response.get('items', [])]
-        
-        # Fetch video details using video IDs
-        videos_response = youtube.videos().list(
-            part="snippet,status",
-            id=",".join(video_ids)
-        ).execute()
-
-        for video in videos_response.get('items', []):
-            title = video['snippet']['title']
-            match = re.search(regex_pattern, title)
-            number = None
-            if match:
-                number = int(match.group())
-
-            # Check if the video is private and scheduled for the target date
-            if video['status']['privacyStatus'] == 'private' and video['status'].get('publishAt', '').startswith(target_date):
-                logging.debug(f"Video Title: {video['snippet']['title']}, Scheduled Date: {video['status']['publishAt']}")
-                scheduled_videos.append((number, video))
-
-        # Check if there are more results to fetch
-        next_page_token = search_response.get('nextPageToken')
-        if not next_page_token:
-            break
-
-    # Sort videos based on numbers extracted from the title
-    scheduled_videos.sort(key=lambda x: x[0])
-
-    # Retrieve videos without the number, if needed
-    scheduled_videos = [video for _, video in scheduled_videos]
-
-    return scheduled_videos
-
 def is_valid_date_format(date_str):
     """Check if the date is in the 'YYYY-MM-DD' format."""
     return bool(re.match(r'^\d{4}-\d{2}-\d{2}$', date_str))
@@ -365,21 +318,6 @@ def scenario_1():
     
     update_videos(youtube, draft_videos[:config["MAX_VIDEOS"]], config)
     logging.info("Finished scenario 1.")  
-
-def scenario_2():
-    logging.info("Starting scenario 2.")
-    youtube = authenticate_with_oauth()
-    config = load_configurations()
-    temp_date = config['TEMP_DATE']
-
-    if not is_valid_date_format(temp_date):
-        logging.error("Error: TEMP_DATE is not in the 'YYYY-MM-DD' format. Please correct the format in .env.")
-        exit(1)
-
-    max_results = config["REQ_MAX_RESULT"]
-    draft_videos = get_scheduled_videos_on_date(youtube, temp_date, max_results)[:config["MAX_VIDEOS"]]
-    update_videos(youtube, draft_videos, config)  
-    logging.info("Finished scenario 2.")  
 
 
 # ---------------- Main Execution ----------------
