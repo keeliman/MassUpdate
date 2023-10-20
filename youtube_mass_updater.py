@@ -36,6 +36,7 @@ def load_configurations():
         "START_VIDEO_NUMBER": int(os.getenv('START_VIDEO_NUMBER', 130)),  # Par défaut à 130 si non défini
         "END_VIDEO_NUMBER": int(os.getenv('END_VIDEO_NUMBER', 200)),  # Par défaut à 200 si non défini
         "VIDEOS_PER_DAY": int(os.getenv('VIDEOS_PER_DAY', 2)),  # Par défaut à 2 si non défini
+        "VIDEO_TAGS": os.getenv('VIDEO_TAGS').split(','),
 
     }
 
@@ -194,8 +195,12 @@ def add_to_playlist(youtube, playlist_id, video_id):
     response = request.execute()
     return response
 
-def update_video(youtube, video, title, description, publish_time, category_id):
+def update_video(youtube, video, publish_time, config ):
     
+    title = process_video_title(video, config["TITLE_PREFIX"], config["TITLE_SUFFIX"])
+    video_categories = get_video_categories(youtube)
+    category_id = video_categories["Entertainment"]
+
     # Vérification du titre
     if not title or len(title.strip()) == 0:
         logging.error(f"Attempted to set an empty title for video: {video['snippet']['title']}. Skipping update.")
@@ -212,8 +217,9 @@ def update_video(youtube, video, title, description, publish_time, category_id):
                 "id": video_id,
                 "snippet": {
                     "title": title,
-                    "description": description,
-                    "categoryId": category_id
+                    "description": config["DESCRIPTION"],
+                    "categoryId": category_id,
+                    "tags": config["VIDEO_TAGS"]
                 },
                 "status": {
                     "publishAt": publish_time.isoformat(),
@@ -256,7 +262,6 @@ def update_videos(youtube, videos, config):
     MAX_QUOTA = 100000  # Daily quota limit
     start_date = config["START_DATE"]
 
-    video_categories = get_video_categories(youtube)
     quota_counter += 1  # Assume 1 unit for fetching categories
 
     videos_to_update = []  # List to store videos that need updating
@@ -284,7 +289,7 @@ def update_videos(youtube, videos, config):
             break
 
         try:
-            update_video(youtube, video, title, config["DESCRIPTION"], publish_time, video_categories["Entertainment"])
+            update_video(youtube, video,  publish_time, config )
             quota_counter += 1600  # 1600 units for video update
             logging.info(f"Updated video: {video['snippet']['title']} with new title: {title} and scheduled publish time: {publish_time}")
 
